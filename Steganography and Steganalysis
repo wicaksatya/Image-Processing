@@ -140,7 +140,7 @@ def back(image_number):
        button_forward.grid(row=1, column=2)
 
 button_back = Button(root, text="Back", command=back, state=DISABLED)
-button_exit = Button(root, text="Exit", command=root.quit)
+button_exit = Button(root, text="Exit", command=root.destroy)
 button_forward = Button(root, text="Forward", command=lambda: forward(2))
 
 button_back.grid(row=1, column=0)
