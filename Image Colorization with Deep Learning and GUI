@@ -10,7 +10,7 @@ from tkinter import *
 from PIL import ImageTk, Image
 
 root = Tk()
-root.title('Projective Transform')
+root.title('Image Colorization')
 
 # Specify the paths for the model files 
 proto_file = "models/colorization_deploy_v2.prototxt"
