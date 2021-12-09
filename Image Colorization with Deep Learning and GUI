@@ -1,0 +1,129 @@
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+import signal
+import os
+import imutils
+import time
+from glob import glob
+from tkinter import *
+from PIL import ImageTk, Image
+
+root = Tk()
+root.title('Projective Transform')
+
+# Specify the paths for the model files 
+proto_file = "models/colorization_deploy_v2.prototxt"
+weights_file = "models/colorization_release_v2.caffemodel"
+
+W_in = 224
+H_in = 224
+ 
+# Read the network into Memory 
+net = cv2.dnn.readNetFromCaffe(proto_file, weights_file) 
+
+# Load the bin centers
+pts_in_hull = np.load('models/pts_in_hull.npy')
+ 
+# populate cluster centers as 1x1 convolution kernel
+pts_in_hull = pts_in_hull.transpose().reshape(2, 313, 1, 1)
+net.getLayer(net.getLayerId('class8_ab')).blobs = [pts_in_hull.astype(np.float32)]
+net.getLayer(net.getLayerId('conv8_313_rh')).blobs = [np.full([1, 313], 2.606, np.float32)]
+
+for f in glob('images/tocolorize/ens_charlie.png'):
+    
+    # Read the input image
+    image = cv2.imread(f)
+    frame = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    
+    #Convert the rgb values of the input image to the range of 0 to 1
+    img_rgb = (frame[:,:,[2, 1, 0]] * 1.0 / 255).astype(np.float32)
+    img_lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2Lab)
+    img_l = img_lab[:,:,0] # pull out L channel
+
+    # resize the lightness channel to network input size 
+    img_l_rs = cv2.resize(img_l, (W_in, H_in)) # resize image to network input size
+    img_l_rs -= 50 # subtract 50 for mean-centering
+
+    net.setInput(cv2.dnn.blobFromImage(img_l_rs))
+    ab_dec = net.forward()[0,:,:,:].transpose((1,2,0)) # this is our result
+
+    (H_orig,W_orig) = img_rgb.shape[:2] # original image size
+    ab_dec_us = cv2.resize(ab_dec, (W_orig, H_orig))
+    img_lab_out = np.concatenate((img_l[:,:,np.newaxis],ab_dec_us),axis=2) # concatenate with original image L
+    img_bgr_out = np.clip(cv2.cvtColor(img_lab_out, cv2.COLOR_Lab2BGR), 0, 1)
+    #cv2.imshow('x',img_bgr_out)
+    fig = plt.figure(figsize=(20,10))
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1, hspace=0.05, wspace=0.05) 
+    plt.gray()
+    plt.subplot(131), plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)), plt.axis('off'), plt.title('Original Image', size=15)
+    plt.subplot(132), plt.imshow(cv2.cvtColor(img_lab_out, cv2.COLOR_BGR2RGB)), plt.axis('off'), plt.title('Predicted Image', size=15)
+    plt.subplot(133), plt.imshow(cv2.cvtColor(img_bgr_out, cv2.COLOR_BGR2RGB)), plt.axis('off'), plt.title('Colorized Image', size=15)
+    plt.show()
+    plt.close()
+
+
+cv2.imwrite('images/tocolorize/predicted.png',255*img_lab_out)
+cv2.imwrite('images/tocolorize/output.png',255*img_bgr_out)
+
+im = Image.open("images/tocolorize/ens_charlie.png")
+im1 = Image.open("images/tocolorize/predicted.png")
+im2 = Image.open("images/tocolorize/output.png")
+
+newsize = (500,500)
+resize_image = im.resize(newsize)
+resize_image1 = im1.resize(newsize)
+resize_image2 = im2.resize(newsize)
+
+my_img1 = ImageTk.PhotoImage(resize_image)
+my_img2 = ImageTk.PhotoImage(resize_image1)
+my_img3 = ImageTk.PhotoImage(resize_image2)
+
+image_list = [my_img1, my_img2, my_img3]
+
+my_label = Label(image = my_img1)
+my_label.grid(row = 0, column = 0, columnspan = 3)
+
+def forward(image_number):
+       global my_label
+       global button_forward
+       global button_back
+
+       my_label.grid_forget()
+       my_label = Label(image=image_list[image_number-1])
+       button_forward = Button(root, text="Forward", command=lambda: forward(image_number+1))
+       button_back = Button(root, text="Back", command=lambda: back(image_number-1))
+
+       if image_number == 3:
+              button_forward = Button(root, text="Forward", state=DISABLED)
+       
+       my_label.grid(row=0, column=0, columnspan=3)
+       button_back.grid(row=1, column=0)
+       button_forward.grid(row=1, column=2)
+
+def back(image_number):
+       global my_label
+       global button_forward
+       global button_back
+
+       my_label.grid_forget()
+       my_label = Label(image=image_list[image_number-1])
+       button_forward = Button(root, text="Forward", command=lambda: forward(image_number+1))
+       button_back = Button(root, text="Back", command=lambda: back(image_number-1))
+
+       if image_number == 1:
+              button_back = Button(root, text="Back", state=DISABLED)
+       
+       my_label.grid(row=0, column=0, columnspan=3)
+       button_back.grid(row=1, column=0)
+       button_forward.grid(row=1, column=2)
+
+button_back = Button(root, text="Back", command=back, state=DISABLED)
+button_exit = Button(root, text="Exit", command=root.destroy)
+button_forward = Button(root, text="Forward", command=lambda: forward(2))
+
+button_back.grid(row=1, column=0)
+button_exit.grid(row=1, column=1)
+button_forward.grid(row=1, column=2)
+
+root.mainloop()
